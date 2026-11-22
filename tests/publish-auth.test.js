@@ -69,7 +69,7 @@ test('same-event game publishing takes transaction lock before collision lookup 
  const write=source.indexOf('insert into ftg_games');
  assert.ok(begin>=0 && lock>begin && lookup>lock && write>lookup);
  assert.match(source,/pg_advisory_xact_lock\(hashtext\(\$1\), hashtext\(\$2\)\)/);
- assert.match(source,/\[String\(event\.id\), String\(game\.game_number\)\]/);
+ assert.match(source,/\[String\(event\.id\), gameNumber\]/);
 });
 
 test('server-only publish endpoint never enables browser CORS or preflight publishing',()=>{
