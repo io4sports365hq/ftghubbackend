@@ -67,6 +67,37 @@ test('concurrent different-game writers cannot overwrite same event/game',async(
   await pool.query(`delete from ftg_games where event_id in
     (select id from ftg_events where slug='isolated-concurrency-fixture')`);
   await pool.query(`delete from ftg_events where slug='isolated-concurrency-fixture'`);
+ }
+});
+
+test('repeated identical capture does not duplicate game or player rows',async(t)=>{
+ if(!process.env.TEST_DATABASE_URL || process.env.TEST_DATABASE_ISOLATED !== 'YES'){
+  t.skip('explicit isolated PostgreSQL test database not configured');return;
+ }
+ const parsed=new URL(process.env.TEST_DATABASE_URL);
+ if(!/(_test|_ci|_fixture)$/i.test(decodeURIComponent(parsed.pathname.slice(1)))){
+  throw Error('Refusing database integration test: database name must end _test, _ci, or _fixture');
+ }
+ try {
+  const first=await publish('retry-capture',22);
+  const second=await publish('retry-capture',22);
+  assert.equal(first.code,200);
+  assert.equal(second.code,200);
+  const games=await pool.query(`select g.id,g.home_score from ftg_games g
+    join ftg_events e on e.id=g.event_id where e.slug='isolated-concurrency-fixture'`);
+  assert.equal(games.rowCount,1);
+  assert.equal(games.rows[0].home_score,22);
+  const players=await pool.query(`select p.pts from ftg_game_players p
+    join ftg_games g on p.game_id=g.id join ftg_events e on e.id=g.event_id
+    where e.slug='isolated-concurrency-fixture'`);
+  assert.equal(players.rowCount,1);
+  assert.equal(players.rows[0].pts,22);
+ } finally {
+  await pool.query(`delete from ftg_game_players where game_id in
+    (select g.id from ftg_games g join ftg_events e on e.id=g.event_id where e.slug='isolated-concurrency-fixture')`);
+  await pool.query(`delete from ftg_games where event_id in
+    (select id from ftg_events where slug='isolated-concurrency-fixture')`);
+  await pool.query(`delete from ftg_events where slug='isolated-concurrency-fixture'`);
   await pool.end();
  }
 });
