@@ -93,6 +93,14 @@ export default async function handler(req, res) {
 
     const event = eventResult.rows[0];
 
+    // Serialize publishers for the same event/game number, including the
+    // initial insert when no row exists to lock with SELECT FOR UPDATE.
+    // pg_advisory_xact_lock is released automatically at transaction end.
+    await client.query(
+      'select pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+      [String(event.id), String(game.game_number)]
+    );
+
     const existingGameResult = await client.query(
       `select id, external_game_id
        from ftg_games
