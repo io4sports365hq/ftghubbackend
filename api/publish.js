@@ -1,4 +1,5 @@
 import { db, cors } from './_db.js';
+import { timingSafeEqual } from 'node:crypto';
 
 function cleanInt(v) {
   const n = Number(v);
@@ -30,7 +31,6 @@ export default async function handler(req, res) {
   if (typeof token !== 'string') {
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
-  const { timingSafeEqual } = await import('node:crypto');
   const expected = Buffer.from(secret);
   const given = Buffer.from(token);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
