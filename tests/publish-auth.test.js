@@ -77,3 +77,18 @@ test('server-only publish endpoint never enables browser CORS or preflight publi
  assert.doesNotMatch(source,/Access-Control-Allow-Origin/i);
  assert.doesNotMatch(source,/req\.method\s*===\s*['"]OPTIONS['"]/);
 });
+
+test('authenticated publish rejects ambiguous game numbers and capture IDs before database',async()=>{
+ const secret='s'.repeat(40),headers={'x-ftg-publish-token':secret};
+ const base={event_slug:'isolated-fixture',players:[]};
+ for(const game_number of [null,0,-1,1.5,{},[], '0','1/2','1'.repeat(11)]){
+  const {res,calls}=await invoke({FTG_HUB_PUBLISH_SECRET:secret},headers,{...base,game:{game_number,external_game_id:'capture-1'}});
+  assert.equal(res.code,400);
+  assert.deepEqual(calls,[]);
+ }
+ for(const external_game_id of [null,1,{},'','../../other','x'.repeat(129)]){
+  const {res,calls}=await invoke({FTG_HUB_PUBLISH_SECRET:secret},headers,{...base,game:{game_number:'1',external_game_id}});
+  assert.equal(res.code,400);
+  assert.deepEqual(calls,[]);
+ }
+});
