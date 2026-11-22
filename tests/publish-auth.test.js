@@ -61,3 +61,13 @@ test('authenticated publish requires explicit well-formed event identity',async(
   assert.deepEqual(calls,[]);
  }
 });
+
+test('same-event game publishing takes transaction lock before collision lookup and write',()=>{
+ const begin=source.indexOf("await client.query('BEGIN')");
+ const lock=source.indexOf('pg_advisory_xact_lock');
+ const lookup=source.indexOf('select id, external_game_id');
+ const write=source.indexOf('insert into ftg_games');
+ assert.ok(begin>=0 && lock>begin && lookup>lock && write>lookup);
+ assert.match(source,/pg_advisory_xact_lock\(hashtext\(\$1\), hashtext\(\$2\)\)/);
+ assert.match(source,/\[String\(event\.id\), String\(game\.game_number\)\]/);
+});
