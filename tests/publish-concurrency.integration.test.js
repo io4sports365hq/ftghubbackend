@@ -25,7 +25,13 @@ function publish(external_game_id,home_score){
  }},res).then(()=>res);
 }
 test('concurrent different-game writers cannot overwrite same event/game',async(t)=>{
- if(!process.env.TEST_DATABASE_URL){t.skip('isolated postgres not configured');return}
+ if(!process.env.TEST_DATABASE_URL || process.env.TEST_DATABASE_ISOLATED !== 'YES'){
+  t.skip('explicit isolated PostgreSQL test database not configured');return
+ }
+ const parsed=new URL(process.env.TEST_DATABASE_URL);
+ if(!/(_test|_ci|_fixture)$/i.test(decodeURIComponent(parsed.pathname.slice(1)))){
+  throw Error('Refusing database integration test: database name must end _test, _ci, or _fixture');
+ }
  await pool.query(`create temporary table no_op(x int)`).catch(()=>{});
  await pool.query(`
  create table if not exists ftg_events(
