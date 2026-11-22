@@ -37,10 +37,24 @@ export default async function handler(req, res) {
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
 
-  const payload = req.body || {};
+  // Reject oversized or malformed publish requests before any database access.
+  // This complements (not replaces) the platform's HTTP body-size limit.
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
+  }
+  let encoded;
+  try { encoded = JSON.stringify(payload); } catch {
+    return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
+  }
+  if (!encoded || Buffer.byteLength(encoded) > 128 * 1024 ||
+      !Array.isArray(payload.players) || payload.players.length > 200 ||
+      !payload.game || typeof payload.game !== 'object' || Array.isArray(payload.game)) {
+    return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
+  }
   const eventSlug = String(payload.event_slug || 'ftg-demo-event').trim();
-  const game = payload.game || {};
-  const players = Array.isArray(payload.players) ? payload.players : [];
+  const game = payload.game;
+  const players = payload.players;
 
   if (!game.game_number) {
     return res.status(400).json({
