@@ -19,6 +19,24 @@ export default async function handler(req, res) {
     });
   }
 
+  // Gate publishing with a server-only credential. The browser scorer cannot
+  // safely hold this credential; publishing requires a separately reviewed
+  // authenticated server-side proxy before Production activation.
+  const secret = process.env.FTG_HUB_PUBLISH_SECRET;
+  if (!secret || Buffer.byteLength(secret) < 32) {
+    return res.status(503).json({ ok: false, error: 'Publishing not configured' });
+  }
+  const token = req.headers?.['x-ftg-publish-token'];
+  if (typeof token !== 'string') {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+  const { timingSafeEqual } = await import('node:crypto');
+  const expected = Buffer.from(secret);
+  const given = Buffer.from(token);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+
   const payload = req.body || {};
   const eventSlug = String(payload.event_slug || 'ftg-demo-event').trim();
   const game = payload.game || {};
