@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
+import { timingSafeEqual } from 'node:crypto';
 
 const dir=path.dirname(fileURLToPath(import.meta.url));
 const source=readFileSync(path.join(dir,'../api/publish.js'),'utf8');
@@ -11,7 +12,7 @@ const isolated=source.replace(/^import \{ db, cors \} from '\.\/_db\.js';\s*/, '
 async function invoke(env,headers,body){
  const calls=[];
  const res={code:0,status(n){this.code=n;return this},json(v){this.body=v;return this},end(){return this}};
- const ctx={process:{env},Buffer,console,db:()=>{calls.push('db');throw Error('unexpected database connection')},cors:()=>{}};
+ const ctx={process:{env},Buffer,console,timingSafeEqual,db:()=>{calls.push('db');throw Error('unexpected database connection')},cors:()=>{}};
  const handler=vm.runInNewContext(isolated+'\nhandler',ctx);
  await handler({method:'POST',headers,body},res);
  return {res,calls};
