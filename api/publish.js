@@ -7,12 +7,8 @@ function cleanInt(v) {
 }
 
 export default async function handler(req, res) {
-  cors(res);
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-
+  // This endpoint is server-to-server only. Never grant browser CORS access.
+  // Browsers must use the separately authorized same-origin Scorekeeper proxy.
   if (req.method !== 'POST') {
     return res.status(405).json({
       ok: false,
