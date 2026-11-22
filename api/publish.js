@@ -1,4 +1,5 @@
 import { db, cors } from './_db.js';
+import { timingSafeEqual } from 'node:crypto';
 
 function cleanInt(v) {
   const n = Number(v);
@@ -6,12 +7,8 @@ function cleanInt(v) {
 }
 
 export default async function handler(req, res) {
-  cors(res);
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
-  }
-
+  // This endpoint is server-to-server only. Never grant browser CORS access.
+  // Browsers must use the separately authorized same-origin Scorekeeper proxy.
   if (req.method !== 'POST') {
     return res.status(405).json({
       ok: false,
@@ -19,20 +16,56 @@ export default async function handler(req, res) {
     });
   }
 
-  const payload = req.body || {};
-  const eventSlug = String(payload.event_slug || 'ftg-demo-event').trim();
-  const game = payload.game || {};
-  const players = Array.isArray(payload.players) ? payload.players : [];
-
-  if (!game.game_number) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Missing game.game_number'
-    });
+  // Gate publishing with a server-only credential. The browser scorer cannot
+  // safely hold this credential; publishing requires a separately reviewed
+  // authenticated server-side proxy before Production activation.
+  const secret = process.env.FTG_HUB_PUBLISH_SECRET;
+  if (!secret || Buffer.byteLength(secret) < 32) {
+    return res.status(503).json({ ok: false, error: 'Publishing not configured' });
+  }
+  const token = req.headers?.['x-ftg-publish-token'];
+  if (typeof token !== 'string') {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+  const expected = Buffer.from(secret);
+  const given = Buffer.from(token);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
 
-  const externalGameId = String(game.external_game_id || '').trim();
-  if (!externalGameId) {
+  // Reject oversized or malformed publish requests before any database access.
+  // This complements (not replaces) the platform's HTTP body-size limit.
+  const payload = req.body;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
+  }
+  let encoded;
+  try { encoded = JSON.stringify(payload); } catch {
+    return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
+  }
+  if (!encoded || Buffer.byteLength(encoded) > 128 * 1024 ||
+      !Array.isArray(payload.players) || payload.players.length > 200 ||
+      !payload.game || typeof payload.game !== 'object' || Array.isArray(payload.game)) {
+    return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
+  }
+  // The caller must supply an explicit event identity; never silently publish
+  // into a shared demo event when an assignment is missing.
+  const eventSlug = typeof payload.event_slug === 'string' ? payload.event_slug.trim() : '';
+  if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(eventSlug)) {
+    return res.status(400).json({ ok: false, error: 'Invalid event_slug' });
+  }
+  const game = payload.game;
+  const players = payload.players;
+
+  // Reject ambiguous or unbounded game identities before touching the DB.
+  const gameNumber = typeof game.game_number === 'number' || typeof game.game_number === 'string'
+    ? String(game.game_number).trim() : '';
+  if (!/^[1-9][0-9]{0,9}$/.test(gameNumber)) {
+    return res.status(400).json({ ok: false, error: 'Invalid game.game_number' });
+  }
+  const externalGameId = typeof game.external_game_id === 'string'
+    ? game.external_game_id.trim() : '';
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(externalGameId)) {
     return res.status(400).json({
       ok: false,
       error: 'Missing game.external_game_id'
@@ -56,12 +89,20 @@ export default async function handler(req, res) {
 
     const event = eventResult.rows[0];
 
+    // Serialize publishers for the same event/game number, including the
+    // initial insert when no row exists to lock with SELECT FOR UPDATE.
+    // pg_advisory_xact_lock is released automatically at transaction end.
+    await client.query(
+      'select pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+      [String(event.id), gameNumber]
+    );
+
     const existingGameResult = await client.query(
       `select id, external_game_id
        from ftg_games
        where event_id = $1 and game_number = $2
        for update`,
-      [event.id, String(game.game_number)]
+      [event.id, gameNumber]
     );
 
     const existingGame = existingGameResult.rows[0];
@@ -132,7 +173,7 @@ export default async function handler(req, res) {
       [
         event.id,
         externalGameId,
-        String(game.game_number || '1'),
+        gameNumber,
         game.game_date || null,
         game.game_time || null,
         game.court || null,
