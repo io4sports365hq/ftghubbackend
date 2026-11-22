@@ -8,7 +8,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 const dir=path.dirname(fileURLToPath(import.meta.url));
 const source=readFileSync(path.join(dir,'../api/publish.js'),'utf8');
-const isolated=source.replace(/^import \{ db, cors \} from '\.\/_db\.js';\s*/, '').replace('export default async function handler','async function handler');
+const isolated=source.replace(/^import .*;\s*$/gm, '').replace('export default async function handler','async function handler');
 async function invoke(env,headers,body){
  const calls=[];
  const res={code:0,status(n){this.code=n;return this},json(v){this.body=v;return this},end(){return this}};
