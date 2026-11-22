@@ -1,0 +1,40 @@
+name: Hub Publishing Concurrency (Disposable PostgreSQL)
+on:
+  pull_request:
+    paths:
+      - 'api/publish.js'
+      - 'tests/publish-concurrency.integration.test.js'
+      - '.github/workflows/publish-concurrency.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: hub_fixture
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fixture -d hub_fixture"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://fixture:fixture-only@localhost:5432/hub_fixture
+      TEST_DATABASE_ISOLATED: 'YES'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: node --test tests/publish-concurrency.integration.test.js
