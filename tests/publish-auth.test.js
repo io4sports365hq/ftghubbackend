@@ -71,3 +71,9 @@ test('same-event game publishing takes transaction lock before collision lookup 
  assert.match(source,/pg_advisory_xact_lock\(hashtext\(\$1\), hashtext\(\$2\)\)/);
  assert.match(source,/\[String\(event\.id\), String\(game\.game_number\)\]/);
 });
+
+test('server-only publish endpoint never enables browser CORS or preflight publishing',()=>{
+ assert.doesNotMatch(source,/\bcors\s*\(\s*res\s*\)/);
+ assert.doesNotMatch(source,/Access-Control-Allow-Origin/i);
+ assert.doesNotMatch(source,/req\.method\s*===\s*['"]OPTIONS['"]/);
+});
