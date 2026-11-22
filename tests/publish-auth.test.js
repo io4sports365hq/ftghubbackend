@@ -32,3 +32,10 @@ test('invalid publisher token fails closed before touching database',async()=>{
  assert.equal(res.code,401);
  assert.deepEqual(calls,[]);
 });
+
+test('valid server credential reaches request validation without database access',async()=>{
+ const secret='s'.repeat(40);
+ const {res,calls}=await invoke({FTG_HUB_PUBLISH_SECRET:secret}, {'x-ftg-publish-token':secret}, {game:{}});
+ assert.equal(res.code,400);
+ assert.deepEqual(calls,[]);
+});
