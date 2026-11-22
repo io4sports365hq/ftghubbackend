@@ -57,15 +57,15 @@ export default async function handler(req, res) {
   const game = payload.game;
   const players = payload.players;
 
-  if (!game.game_number) {
-    return res.status(400).json({
-      ok: false,
-      error: 'Missing game.game_number'
-    });
+  // Reject ambiguous or unbounded game identities before touching the DB.
+  const gameNumber = typeof game.game_number === 'number' || typeof game.game_number === 'string'
+    ? String(game.game_number).trim() : '';
+  if (!/^[1-9][0-9]{0,9}$/.test(gameNumber)) {
+    return res.status(400).json({ ok: false, error: 'Invalid game.game_number' });
   }
-
-  const externalGameId = String(game.external_game_id || '').trim();
-  if (!externalGameId) {
+  const externalGameId = typeof game.external_game_id === 'string'
+    ? game.external_game_id.trim() : '';
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(externalGameId)) {
     return res.status(400).json({
       ok: false,
       error: 'Missing game.external_game_id'
@@ -94,7 +94,7 @@ export default async function handler(req, res) {
     // pg_advisory_xact_lock is released automatically at transaction end.
     await client.query(
       'select pg_advisory_xact_lock(hashtext($1), hashtext($2))',
-      [String(event.id), String(game.game_number)]
+      [String(event.id), gameNumber]
     );
 
     const existingGameResult = await client.query(
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
        from ftg_games
        where event_id = $1 and game_number = $2
        for update`,
-      [event.id, String(game.game_number)]
+      [event.id, gameNumber]
     );
 
     const existingGame = existingGameResult.rows[0];
@@ -173,7 +173,7 @@ export default async function handler(req, res) {
       [
         event.id,
         externalGameId,
-        String(game.game_number || '1'),
+        gameNumber,
         game.game_date || null,
         game.game_time || null,
         game.court || null,
