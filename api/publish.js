@@ -52,7 +52,12 @@ export default async function handler(req, res) {
       !payload.game || typeof payload.game !== 'object' || Array.isArray(payload.game)) {
     return res.status(400).json({ ok: false, error: 'Invalid publish payload' });
   }
-  const eventSlug = String(payload.event_slug || 'ftg-demo-event').trim();
+  // The caller must supply an explicit event identity; never silently publish
+  // into a shared demo event when an assignment is missing.
+  const eventSlug = typeof payload.event_slug === 'string' ? payload.event_slug.trim() : '';
+  if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(eventSlug)) {
+    return res.status(400).json({ ok: false, error: 'Invalid event_slug' });
+  }
   const game = payload.game;
   const players = payload.players;
 
