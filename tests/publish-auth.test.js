@@ -39,3 +39,15 @@ test('valid server credential reaches request validation without database access
  assert.equal(res.code,400);
  assert.deepEqual(calls,[]);
 });
+
+test('authenticated malformed and oversized requests never touch database',async()=>{
+ const secret='s'.repeat(40);
+ const headers={'x-ftg-publish-token':secret};
+ for(const body of [null,[],{game:{game_number:'1'},players:'invalid'},
+   {game:{game_number:'1'},players:Array.from({length:201},()=>({}))},
+   {game:{game_number:'1'},players:[],note:'x'.repeat(130*1024)}]){
+  const {res,calls}=await invoke({FTG_HUB_PUBLISH_SECRET:secret},headers,body);
+  assert.equal(res.code,400);
+  assert.deepEqual(calls,[]);
+ }
+});
