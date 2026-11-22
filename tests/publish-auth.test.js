@@ -51,3 +51,13 @@ test('authenticated malformed and oversized requests never touch database',async
   assert.deepEqual(calls,[]);
  }
 });
+
+test('authenticated publish requires explicit well-formed event identity',async()=>{
+ const secret='s'.repeat(40), headers={'x-ftg-publish-token':secret};
+ const base={game:{game_number:'1',external_game_id:'g1'},players:[]};
+ for(const event_slug of [undefined,'','../other','TEAM WITH SPACES','a'.repeat(81),42]){
+  const {res,calls}=await invoke({FTG_HUB_PUBLISH_SECRET:secret},headers,{...base,event_slug});
+  assert.equal(res.code,400);
+  assert.deepEqual(calls,[]);
+ }
+});
