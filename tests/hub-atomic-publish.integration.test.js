@@ -84,6 +84,23 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   await db.query('UPDATE scorekeeper_operator_sessions SET revoked_at=now()');
   assert.equal((await callDatabase(token,{...args,binding})).statusCode,403);
   assert.equal(connections,beforeIdentity+1);
+  const {createServicePublishHandler}=await import('../lib/hub-service-publish-handler.proposed.js');
+  const {createServiceDelegation}=await import('../lib/hub-service-delegation.proposed.js');
+  const credential='fixture-service-credential-not-secret';
+  const service=createServicePublishHandler({credential,resolveDelegation:createServiceDelegation({client:db,resolveEvent:async slug=>slug===binding.eventSlug?{id:1,slug}:null,clock:()=>1000}),connect:async()=>{connections++;return {query:db.query.bind(db),release(){releases++;}};}});
+  const callService=async(key,sessionToken,body)=>{
+   const res={statusCode:0,status(n){this.statusCode=n;return this;},json(value){this.body=value;return this;}};
+   await service({method:'POST',headers:{'x-ftg-publish-token':key,'x-ftg-operator-session':sessionToken},body},res);return res;
+  };
+  const beforeService=connections;
+  assert.equal((await callService(credential,token,{...args,binding})).statusCode,403);
+  await db.query('UPDATE scorekeeper_operator_sessions SET revoked_at=NULL');
+  assert.equal((await callService('wrong',token,{...args,binding})).statusCode,403);
+  assert.equal((await callService(credential,'B'.repeat(43),{...args,binding})).statusCode,403);
+  assert.equal((await callService(credential,token,{...args,binding:{...binding,captureId:'wrong'}})).statusCode,403);
+  assert.equal(connections,beforeService);
+  assert.deepEqual((await callService(credential,token,{...args,binding})).body,{ok:true,...first,action:'replay'});
+  assert.equal(connections,beforeService+1);
   const before=connections;
   assert.equal((await callAssigned({...args,binding},false)).statusCode,403);
   assert.equal((await callAssigned({...args,binding:{...binding,captureId:'wrong'}})).statusCode,403);
