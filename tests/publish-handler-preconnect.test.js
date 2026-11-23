@@ -34,6 +34,9 @@ test('live handler rejects unsafe methods and unconfigured credentials without D
   assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':['s'.repeat(40)]},body:{}})).statusCode,401);
   const headers={'x-ftg-publish-token':process.env.FTG_HUB_PUBLISH_SECRET};
   const base={event_slug:'event-one',game:{game_number:1,external_game_id:'capture-one'},players:[]};
+  const cyclic={...base};cyclic.self=cyclic;
+  assert.equal((await invoke({method:'POST',headers,body:cyclic})).statusCode,400);
+  assert.equal((await invoke({method:'OPTIONS',headers,body:base})).statusCode,405);
   for(const body of [
    null,[],{}, {...base,event_slug:'ftg-demo-event!'},
    {...base,game:{...base.game,game_number:'0'}},
