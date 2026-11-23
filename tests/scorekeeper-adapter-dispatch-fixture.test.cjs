@@ -139,3 +139,17 @@ test('missing CSRF verification blocks outbound publishing',async()=>{
  assert.deepEqual(result,{status:403,reason:'csrf'});
  assert.equal(outbound,0);
 });
+
+test('outbound fixture receives no session, browser token, or assignment internals',async()=>{
+ const sent=[];
+ const request={method:'POST',csrfVerified:true,binding,
+  cookie:'session=PRIVATE',authorization:'Bearer PRIVATE',
+  payload:{operatorId:'attacker',hubSecret:'PRIVATE'}};
+ await dispatchAuthorizedFixture({request,nowMs:1000,
+  loadSession:async()=>({...session,sessionToken:'PRIVATE'}),
+  loadAssignment:async()=>({...assignment,internalNotes:'PRIVATE'}),
+  sendFixture:async value=>{sent.push(value);return {status:202};}});
+ assert.equal(sent.length,1);
+ assert.deepEqual(Object.keys(sent[0]).sort(),['captureId','eventSlug','gameNumber']);
+ assert.equal(JSON.stringify(sent).includes('PRIVATE'),false);
+});
