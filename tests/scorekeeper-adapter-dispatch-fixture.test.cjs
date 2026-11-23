@@ -101,3 +101,18 @@ test('missing transport is rejected only after authorization, with no fallback',
  });
  assert.equal(rejected.status,403);
 });
+
+test('failed authorization never resolves or executes the outbound transport',async()=>{
+ let invoked=0;
+ const sendFixture=async()=>{invoked++;return {status:200};};
+ for(const request of [
+  {method:'POST',csrfVerified:false,binding},
+  {method:'DELETE',csrfVerified:true,binding},
+  {method:'POST',csrfVerified:true,binding:{...binding,gameNumber:'8'}}
+ ]){
+  const result=await dispatchAuthorizedFixture({request,nowMs:1000,
+   loadSession:async()=>session,loadAssignment:async()=>assignment,sendFixture});
+  assert.notEqual(result.status,200);
+ }
+ assert.equal(invoked,0);
+});
