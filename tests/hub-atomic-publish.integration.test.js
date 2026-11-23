@@ -42,6 +42,28 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   const failed=await invoke({...args,expectedRevision:1,idempotencyKey:'handler-failure',players:[{player_name:'Fixture Player',pts:99}]});
   assert.equal(failed.statusCode,503);
   assert.equal(connections,releases);
+  const {createAssignedPublishHandler}=await import('../lib/hub-assigned-publish-handler.proposed.js');
+  const binding={eventSlug:'fixture-event',gameNumber:'1',captureId:'capture-A'};
+  const session={operatorId:'op-1',verified:true,revoked:false,expiresAtMs:2000};
+  const assigned=createAssignedPublishHandler({
+   verifyCsrf:async req=>req.fixtureCsrf===true,
+   loadSession:async()=>session,
+   loadAssignment:async()=>({...session,...binding,active:true}),
+   resolveEvent:async slug=>slug===binding.eventSlug?{id:1,slug}:null,
+   connect:async()=>{connections++;return {query:db.query.bind(db),release(){releases++;}};},
+   clock:()=>1000
+  });
+  const callAssigned=async(body,fixtureCsrf=true)=>{
+   const res={statusCode:0,status(n){this.statusCode=n;return this;},json(value){this.body=value;return this;}};
+   await assigned({method:'POST',body,fixtureCsrf},res);return res;
+  };
+  const before=connections;
+  assert.equal((await callAssigned({...args,binding},false)).statusCode,403);
+  assert.equal((await callAssigned({...args,binding:{...binding,captureId:'wrong'}})).statusCode,403);
+  assert.equal(connections,before);
+  assert.deepEqual((await callAssigned({...args,binding})).body,{ok:true,...first,action:'replay'});
+  assert.equal(connections,releases);
+
   assert.equal(first.action,'committed');
   assert.deepEqual(await commitHubPublish(db,args),{...first,action:'replay'});
   assert.deepEqual(await commitHubPublish(db,{...args,game:{away_score:5,home_score:11},players:[{pts:11,player_name:'Fixture Player'}]}),{...first,action:'replay'});
