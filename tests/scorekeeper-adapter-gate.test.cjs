@@ -93,3 +93,11 @@ test('unverified and revoked assignments fail closed',async()=>{
   assert.equal(result.status,403);
  }
 });
+
+test('authorization requires trusted provider functions, never browser identity',async()=>{
+ const request={method:'POST',csrfVerified:true,binding:{eventSlug:'event-one',gameNumber:'7',captureId:'capture-A'}};
+ await assert.rejects(authorizeAdapterRequest({request,nowMs:1000,
+  loadSession:null,loadAssignment:async()=>assignment}),TypeError);
+ await assert.rejects(authorizeAdapterRequest({request,nowMs:1000,
+  loadSession:async()=>session,loadAssignment:null}),TypeError);
+});
