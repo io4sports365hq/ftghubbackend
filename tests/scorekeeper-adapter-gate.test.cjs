@@ -101,3 +101,17 @@ test('authorization requires trusted provider functions, never browser identity'
  await assert.rejects(authorizeAdapterRequest({request,nowMs:1000,
   loadSession:async()=>session,loadAssignment:null}),TypeError);
 });
+
+test('authorization provider errors do not reveal internal exception text',async()=>{
+ const request={method:'POST',csrfVerified:true,binding:{eventSlug:'event-one',gameNumber:'7',captureId:'capture-A'}};
+ const secretError=async()=>{throw Error('database secret token=PRIVATE');};
+ const failures=[
+  {loadSession:secretError,loadAssignment:async()=>assignment},
+  {loadSession:async()=>session,loadAssignment:secretError}
+ ];
+ for(const providers of failures){
+  const result=await authorizeAdapterRequest({request,nowMs:1000,...providers});
+  assert.equal(result.status,503);
+  assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+ }
+});
