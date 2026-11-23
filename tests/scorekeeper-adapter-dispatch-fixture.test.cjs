@@ -35,3 +35,20 @@ test('only the trusted binding is sent after authorization',async()=>{
  assert.deepEqual(sent,[binding]);
  assert.equal(Object.isFrozen(sent[0]),true);
 });
+
+test('identity store failures and revoked assignments cause zero outbound calls',async()=>{
+ let outbound=0;
+ const request={method:'POST',csrfVerified:true,binding};
+ const sendFixture=async()=>{outbound++;return {status:200};};
+ const cases=[
+  {loadSession:async()=>{throw Error('offline');},loadAssignment:async()=>assignment},
+  {loadSession:async()=>session,loadAssignment:async()=>{throw Error('offline');}},
+  {loadSession:async()=>session,loadAssignment:async()=>({...assignment,revoked:true})},
+  {loadSession:async()=>session,loadAssignment:async()=>({...assignment,verified:false})}
+ ];
+ for(const deps of cases){
+  const result=await dispatchAuthorizedFixture({request,nowMs:1000,sendFixture,...deps});
+  assert.notEqual(result.status,200);
+ }
+ assert.equal(outbound,0);
+});
