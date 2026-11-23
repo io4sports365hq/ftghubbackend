@@ -77,3 +77,14 @@ test('missing binding never dispatches outbound publishing',async()=>{
  assert.equal(result.status,403);
  assert.equal(outbound,0);
 });
+
+test('upstream transport errors are redacted and never imply successful publish',async()=>{
+ const request={method:'POST',csrfVerified:true,binding};
+ for(const error of [new Error('token=SECRET private payload'),new Error('connection timed out')]){
+  const result=await dispatchAuthorizedFixture({request,nowMs:1000,
+   loadSession:async()=>session,loadAssignment:async()=>assignment,
+   sendFixture:async()=>{throw error;}});
+  assert.deepEqual(result,{status:503,reason:'publish_transport_unavailable'});
+  assert.equal(JSON.stringify(result).includes('SECRET'),false);
+ }
+});
