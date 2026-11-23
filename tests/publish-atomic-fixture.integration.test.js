@@ -115,5 +115,23 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
 
+  // Separate connections contend on the same transaction advisory lock.
+  const peer=new pg.Client({connectionString:url,ssl:false});
+  await peer.connect();
+  try {
+   await peer.query('SET search_path TO sk_atomic_fixture');
+   const next={...args,expectedRevision:2,idempotencyKey:'concurrent-key',payloadDigest:'8'.repeat(64),score:18,points:18,receiptId:'88888888-8888-4888-8888-888888888888'};
+   const submit=client=>dispatchAuthorizedFixture({
+    request,nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment,
+    sendFixture:async authorized=>commitAtomicPublish(client,{...next,gameNumber:authorized.gameNumber,captureId:authorized.captureId})
+   });
+   const results=await Promise.all([submit(db),submit(peer)]);
+   assert.deepEqual(results.map(r=>r.action).sort(),['committed','replay']);
+   assert.ok(results.every(r=>r.receiptId===next.receiptId && r.revision===3));
+   assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),3);
+   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,3);
+   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,18);
+  } finally {await peer.end();}
+
  }finally{await db.query('DROP SCHEMA IF EXISTS sk_atomic_fixture CASCADE').catch(()=>{});await db.end();}
 });
