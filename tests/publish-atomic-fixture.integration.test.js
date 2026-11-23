@@ -28,18 +28,30 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_fixture_players')).rows[0].n,1);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  // A valid second revision advances the game, but replay of the first request
+  // must still return its original immutable receipt and revision.
+  const second={...args,idempotencyKey:'key-D',expectedRevision:1,
+   payloadDigest:'d'.repeat(64),score:15,points:15,
+   receiptId:'44444444-4444-4444-8444-444444444444'};
+  assert.deepEqual(await commitAtomicPublish(db,second),
+   {status:200,action:'committed',receiptId:second.receiptId,revision:2});
+  assert.deepEqual(await commitAtomicPublish(db,args),
+   {status:200,action:'replay',receiptId,revision:1});
+  assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-E',expectedRevision:1})).status,409);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
   // Force a player insert failure after revision and score updates. All writes
   // must roll back, preserving the previous committed revision and receipt.
   await db.query('ALTER TABLE scorekeeper_fixture_players ADD CONSTRAINT points_limit CHECK(points <= 20)');
   await assert.rejects(commitAtomicPublish(db,{
-   ...args,idempotencyKey:'key-C',expectedRevision:1,
+   ...args,idempotencyKey:'key-C',expectedRevision:2,
    payloadDigest:'c'.repeat(64),score:99,points:99,
    receiptId:'33333333-3333-4333-8333-333333333333'
   }),/check constraint/);
-  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),1);
-  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
-  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,11);
-  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),2);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
 
  }finally{await db.query('DROP SCHEMA IF EXISTS sk_atomic_fixture CASCADE').catch(()=>{});await db.end();}
 });
