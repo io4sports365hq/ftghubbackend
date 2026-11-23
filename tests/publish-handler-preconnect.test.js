@@ -18,6 +18,11 @@ test('live handler rejects unsafe methods and unconfigured credentials without D
   delete process.env.DATABASE_URL;
   delete process.env.FTG_HUB_PUBLISH_SECRET;
   assert.equal((await invoke({method:'GET'})).statusCode,405);
+  for(const method of ['GET','OPTIONS','PUT','DELETE']){
+   const result=await invoke({method,headers:{origin:'https://untrusted.example'},body:{}});
+   assert.equal(result.statusCode,405);
+   assert.equal(result.headers?.['Access-Control-Allow-Origin'],undefined);
+  }
   assert.equal((await invoke({method:'POST',headers:{},body:{}})).statusCode,503);
   process.env.FTG_HUB_PUBLISH_SECRET='s'.repeat(31);
   assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':'s'.repeat(31)},body:{}})).statusCode,503);
