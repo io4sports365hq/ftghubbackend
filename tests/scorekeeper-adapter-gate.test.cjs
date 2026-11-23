@@ -69,3 +69,27 @@ test('revoked and malformed sessions never query assignments',async()=>{
  }
  assert.equal(assignmentCalls,0);
 });
+
+test('assignment failures cannot authorize a different event or game',async()=>{
+ for(const binding of [
+  {...request.binding,eventSlug:'event-two'},
+  {...request.binding,gameNumber:'8'},
+  {...request.binding,captureId:'capture-B'}
+ ]){
+  const result=await authorizeAdapterRequest({request:{...request,binding},nowMs:1000,
+   loadSession:async()=>session,loadAssignment:async()=>assignment});
+  assert.deepEqual(result,{status:403,reason:'capture_mismatch'});
+ }
+});
+test('unverified and revoked assignments fail closed',async()=>{
+ for(const a of [
+  {...assignment,verified:false},
+  {...assignment,revoked:true},
+  {...assignment,active:false},
+  {...assignment,expiresAtMs:1000}
+ ]){
+  const result=await authorizeAdapterRequest({request,nowMs:1000,
+   loadSession:async()=>session,loadAssignment:async()=>a});
+  assert.equal(result.status,403);
+ }
+});
