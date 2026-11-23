@@ -40,6 +40,17 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-E',expectedRevision:1})).status,409);
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // An out-of-date revision with a fresh idempotency key must not mutate
+  // the latest committed game, player row, or receipt ledger.
+  assert.deepEqual(await commitAtomicPublish(db,{
+   ...args,idempotencyKey:'key-stale',expectedRevision:0,
+   payloadDigest:'e'.repeat(64),score:999,points:999,
+   receiptId:'55555555-5555-4555-8555-555555555555'
+  }),{status:409,action:'revision_conflict'});
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),2);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
   // Receipt insertion is the final write. A duplicate receipt UUID must
   // abort and roll back even successful game and player writes.
   await assert.rejects(commitAtomicPublish(db,{
