@@ -21,7 +21,22 @@ test('fixture commits game/player/receipt together and replays without mutation'
   await db.query('CREATE TABLE scorekeeper_publish_receipts(receipt_id uuid primary key,event_id bigint,game_number text,external_game_id text,idempotency_key text,payload_digest text,expected_revision bigint,committed_revision bigint,unique(event_id,game_number,idempotency_key))');
   await db.query('CREATE TABLE scorekeeper_fixture_scores(event_id bigint,game_number text,score int,primary key(event_id,game_number))');
   await db.query('CREATE TABLE scorekeeper_fixture_players(event_id bigint,game_number text,points int)');
-  assert.equal((await commitAtomicPublish(db,args)).action,'committed');
+  const {dispatchAuthorizedFixture}=require('../lib/scorekeeper-adapter-dispatch-fixture.cjs');
+  const session={operatorId:'op-1',verified:true,revoked:false,expiresAtMs:2000};
+  const binding={eventSlug:'fixture-event',gameNumber:'1',captureId:'capture-A'};
+  const assignment={...session,...binding,active:true};
+  let calls=0;
+  const dispatch=async request=>dispatchAuthorizedFixture({
+   request,nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment,
+   sendFixture:async authorized=>{calls++;return commitAtomicPublish(db,{...args,gameNumber:authorized.gameNumber,captureId:authorized.captureId});}
+  });
+  const request={method:'POST',csrfVerified:true,binding};
+  assert.equal((await dispatch({...request,binding:{...binding,captureId:'other'}})).status,403);
+  assert.equal(calls,0);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_versions')).rows[0].n,0);
+  assert.equal((await dispatch(request)).action,'committed');
+  assert.equal((await dispatch(request)).action,'replay');
+  assert.equal(calls,2);
   assert.deepEqual(await commitAtomicPublish(db,args),{status:200,action:'replay',receiptId,revision:1});
   assert.equal((await commitAtomicPublish(db,{...args,payloadDigest:'b'.repeat(64),score:99,points:99})).status,409);
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-B',captureId:'capture-B'})).status,409);
