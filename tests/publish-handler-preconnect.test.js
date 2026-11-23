@@ -22,6 +22,8 @@ test('live handler rejects unsafe methods and unconfigured credentials without D
   process.env.FTG_HUB_PUBLISH_SECRET='s'.repeat(40);
   assert.equal((await invoke({method:'POST',headers:{},body:{}})).statusCode,401);
   assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':'wrong'},body:{}})).statusCode,401);
+  assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':'t'.repeat(40)},body:{}})).statusCode,401);
+  assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':['s'.repeat(40)]},body:{}})).statusCode,401);
   const headers={'x-ftg-publish-token':process.env.FTG_HUB_PUBLISH_SECRET};
   const base={event_slug:'event-one',game:{game_number:1,external_game_id:'capture-one'},players:[]};
   for(const body of [
