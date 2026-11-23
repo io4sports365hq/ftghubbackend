@@ -23,6 +23,10 @@ test('live handler rejects unsafe methods and unconfigured credentials without D
   assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':'s'.repeat(31)},body:{}})).statusCode,503);
   process.env.FTG_HUB_PUBLISH_SECRET='';
   assert.equal((await invoke({method:'POST',headers:{},body:{}})).statusCode,503);
+  // Exactly 32 bytes is the documented minimum. Valid credentials must
+  // proceed to payload validation, never silently bypass the secret check.
+  process.env.FTG_HUB_PUBLISH_SECRET='s'.repeat(32);
+  assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':'s'.repeat(32)},body:{}})).statusCode,400);
   process.env.FTG_HUB_PUBLISH_SECRET='s'.repeat(40);
   assert.equal((await invoke({method:'POST',headers:{},body:{}})).statusCode,401);
   assert.equal((await invoke({method:'POST',headers:{'x-ftg-publish-token':'wrong'},body:{}})).statusCode,401);
