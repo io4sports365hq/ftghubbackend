@@ -20,6 +20,13 @@ test('missing, expired, revoked, or mismatched records fail closed',()=>{
   {request:{...valid.request,eventSlug:'other'}},
   {request:{...valid.request,gameNumber:'8'}},
   {request:{...valid.request,captureId:'capture-B'}},
+  {session:{...valid.session,operatorId:''}},
+  {session:{...valid.session,expiresAtMs:undefined}},
+  {assignment:{...valid.assignment,eventSlug:'UPPERCASE'}},
+  {assignment:{...valid.assignment,gameNumber:'07'}},
+  {assignment:{...valid.assignment,captureId:'bad capture'}},
+  {request:{...valid.request,gameNumber:'07'}},
+  {assignment:{...valid.assignment,expiresAtMs:undefined}},
  ];
  for(const change of cases)assert.equal(authorizeAssignedCapture({...valid,...change}).allowed,false);
 });
