@@ -52,3 +52,20 @@ test('invalid clock rejects before any identity store access',async()=>{
  }
  assert.equal(calls,0);
 });
+
+test('revoked and malformed sessions never query assignments',async()=>{
+ let assignmentCalls=0;
+ for(const s of [
+  {...session,revoked:true},
+  {...session,revoked:undefined},
+  {...session,expiresAtMs:undefined},
+  {...session,expiresAtMs:-1},
+  {...session,operatorId:''}
+ ]){
+  const result=await authorizeAdapterRequest({request,nowMs:1000,
+   loadSession:async()=>s,
+   loadAssignment:async()=>{assignmentCalls++;return assignment;}});
+  assert.notEqual(result.status,200);
+ }
+ assert.equal(assignmentCalls,0);
+});
