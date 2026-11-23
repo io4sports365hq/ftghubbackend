@@ -115,3 +115,10 @@ test('authorization provider errors do not reveal internal exception text',async
   assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
  }
 });
+
+test('missing assignment record denies publish rather than using demo defaults',async()=>{
+ const request={method:'POST',csrfVerified:true,binding:{eventSlug:'ftg-demo-event',gameNumber:'1',captureId:'capture-A'}};
+ const result=await authorizeAdapterRequest({request,nowMs:1000,
+  loadSession:async()=>session,loadAssignment:async()=>null});
+ assert.deepEqual(result,{status:403,reason:'unauthorized'});
+});
