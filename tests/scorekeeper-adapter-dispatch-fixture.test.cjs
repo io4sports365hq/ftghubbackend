@@ -116,3 +116,26 @@ test('failed authorization never resolves or executes the outbound transport',as
  }
  assert.equal(invoked,0);
 });
+
+test('session expiry at exact boundary blocks outbound publishing',async()=>{
+ let outbound=0;
+ for(const nowMs of [2000,2001]){
+  const result=await dispatchAuthorizedFixture({
+   request:{method:'POST',csrfVerified:true,binding},nowMs,
+   loadSession:async()=>session,loadAssignment:async()=>assignment,
+   sendFixture:async()=>{outbound++;return {status:200};}
+  });
+  assert.equal(result.status,401);
+ }
+ assert.equal(outbound,0);
+});
+test('missing CSRF verification blocks outbound publishing',async()=>{
+ let outbound=0;
+ const result=await dispatchAuthorizedFixture({
+  request:{method:'POST',binding},nowMs:1000,
+  loadSession:async()=>session,loadAssignment:async()=>assignment,
+  sendFixture:async()=>{outbound++;return {status:200};}
+ });
+ assert.deepEqual(result,{status:403,reason:'csrf'});
+ assert.equal(outbound,0);
+});
