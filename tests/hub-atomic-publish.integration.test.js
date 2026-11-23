@@ -21,6 +21,8 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   const first=await commitHubPublish(db,args);
   assert.equal(first.action,'committed');
   assert.deepEqual(await commitHubPublish(db,args),{...first,action:'replay'});
+  assert.deepEqual(await commitHubPublish(db,{...args,game:{away_score:5,home_score:11},players:[{pts:11,player_name:'Fixture Player'}]}),{...first,action:'replay'});
+  assert.equal((await commitHubPublish(db,{...args,players:[{pts:12,player_name:'Fixture Player'}]})).status,409);
   assert.equal((await commitHubPublish(db,{...args,game:{home_score:12}})).status,409);
   await assert.rejects(commitHubPublish(db,{...args,expectedRevision:1,idempotencyKey:'failure',game:{home_score:99},players:[{player_name:'Fixture Player',pts:99}]}),/check constraint/);
   assert.equal((await db.query('SELECT home_score FROM ftg_games')).rows[0].home_score,11);
