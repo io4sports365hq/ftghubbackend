@@ -18,7 +18,30 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   CREATE TABLE ftg_game_players(game_id bigint references ftg_games(id),side text,player_number text,player_name text,pts int check(pts<=20),reb int,ast int,stl int,blk int,turnovers int,fouls int,ftm int,ftx int);`);
   await db.query(await readFile(new URL('../docs/sql/scorekeeper-publish-receipts.proposed.sql',import.meta.url),'utf8'));
   const args={eventId:1,gameNumber:'1',captureId:'capture-A',expectedRevision:0,idempotencyKey:'first',game:{home_score:11,away_score:5},players:[{player_name:'Fixture Player',pts:11}]};
-  const first=await commitHubPublish(db,args);
+  const {createDraftPublishHandler}=await import('../lib/hub-publish-handler.proposed.js');
+  let connections=0,releases=0;
+  const handler=createDraftPublishHandler({
+   authorize:async req=>req.fixtureAuthorized===true?{eventId:1,gameNumber:'1',captureId:'capture-A'}:null,
+   connect:async()=>{connections++;return {query:db.query.bind(db),release(){releases++;}};}
+  });
+  const invoke=async(body,fixtureAuthorized=true)=>{
+   const res={statusCode:0,status(n){this.statusCode=n;return this;},json(value){this.body=value;return this;}};
+   await handler({method:'POST',body,fixtureAuthorized},res);return res;
+  };
+  assert.equal((await invoke(args,false)).statusCode,403);
+  assert.equal((await invoke({...args,players:null})).statusCode,400);
+  assert.equal(connections,0);
+  const published=await invoke(args);
+  assert.equal(published.statusCode,200);
+  const {ok,...first}=published.body;
+  assert.equal(ok,true);
+  assert.equal(releases,1);
+  const replay=await invoke(args);
+  assert.deepEqual(replay.body,{ok:true,...first,action:'replay'});
+  assert.equal((await invoke({...args,game:{home_score:12}})).statusCode,409);
+  const failed=await invoke({...args,expectedRevision:1,idempotencyKey:'handler-failure',players:[{player_name:'Fixture Player',pts:99}]});
+  assert.equal(failed.statusCode,503);
+  assert.equal(connections,releases);
   assert.equal(first.action,'committed');
   assert.deepEqual(await commitHubPublish(db,args),{...first,action:'replay'});
   assert.deepEqual(await commitHubPublish(db,{...args,game:{away_score:5,home_score:11},players:[{pts:11,player_name:'Fixture Player'}]}),{...first,action:'replay'});
