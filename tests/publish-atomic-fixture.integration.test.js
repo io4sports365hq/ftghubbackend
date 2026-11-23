@@ -22,7 +22,8 @@ test('fixture commits game/player/receipt together and replays without mutation'
   await db.query('CREATE TABLE scorekeeper_fixture_scores(event_id bigint,game_number text,score int,primary key(event_id,game_number))');
   await db.query('CREATE TABLE scorekeeper_fixture_players(event_id bigint,game_number text,points int)');
   assert.equal((await commitAtomicPublish(db,args)).action,'committed');
-  assert.deepEqual(await commitAtomicPublish(db,{...args,score:99,points:99}),{status:200,action:'replay',receiptId,revision:1});
+  assert.deepEqual(await commitAtomicPublish(db,args),{status:200,action:'replay',receiptId,revision:1});
+  assert.equal((await commitAtomicPublish(db,{...args,payloadDigest:'b'.repeat(64),score:99,points:99})).status,409);
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-B',captureId:'capture-B'})).status,409);
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_fixture_players')).rows[0].n,1);
