@@ -52,3 +52,28 @@ test('identity store failures and revoked assignments cause zero outbound calls'
  }
  assert.equal(outbound,0);
 });
+
+test('browser-supplied identity overrides never reach fixture transport',async()=>{
+ const sent=[];
+ const forged={method:'POST',csrfVerified:true,binding,
+  operatorId:'attacker',eventSlug:'other-event',gameNumber:'99',captureId:'other-capture',
+  hubPublishToken:'browser-secret'};
+ const result=await dispatchAuthorizedFixture({
+  request:forged,nowMs:1000,
+  loadSession:async()=>session,loadAssignment:async()=>assignment,
+  sendFixture:async authorized=>{sent.push(authorized);return {status:202};}
+ });
+ assert.equal(result.status,202);
+ assert.deepEqual(sent,[binding]);
+ for(const key of ['operatorId','hubPublishToken'])assert.equal(Object.hasOwn(sent[0],key),false);
+});
+test('missing binding never dispatches outbound publishing',async()=>{
+ let outbound=0;
+ const result=await dispatchAuthorizedFixture({
+  request:{method:'POST',csrfVerified:true},nowMs:1000,
+  loadSession:async()=>session,loadAssignment:async()=>assignment,
+  sendFixture:async()=>{outbound++;return {status:200};}
+ });
+ assert.equal(result.status,403);
+ assert.equal(outbound,0);
+});
