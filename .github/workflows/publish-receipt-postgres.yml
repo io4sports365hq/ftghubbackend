@@ -7,6 +7,8 @@ on:
       - 'tests/publish-receipt-concurrent.integration.test.js'
       - 'tests/publish-receipt-schema.integration.test.js'
       - 'docs/sql/scorekeeper-publish-receipts.proposed.sql'
+      - 'lib/publish-atomic-fixture.cjs'
+      - 'tests/publish-atomic-fixture.integration.test.js'
       - '.github/workflows/publish-receipt-postgres.yml'
   workflow_dispatch:
 permissions:
@@ -40,4 +42,4 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: node --test tests/publish-receipt-postgres.integration.test.js tests/publish-receipt-concurrent.integration.test.js tests/publish-receipt-schema.integration.test.js
+      - run: node --test tests/publish-receipt-postgres.integration.test.js tests/publish-receipt-concurrent.integration.test.js tests/publish-receipt-schema.integration.test.js tests/publish-atomic-fixture.integration.test.js
