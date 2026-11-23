@@ -28,7 +28,11 @@ test('live handler rejects unsafe methods and unconfigured credentials without D
    null,[],{}, {...base,event_slug:'ftg-demo-event!'},
    {...base,game:{...base.game,game_number:'0'}},
    {...base,game:{...base.game,external_game_id:'bad capture'}},
-   {...base,players:new Array(201).fill({})}
+   {...base,players:new Array(201).fill({})},
+   {...base,event_name:'x'.repeat(129*1024)},
+   {...base,game:null},
+   {...base,game:{...base.game,game_number:'1;DROP TABLE ftg_games'}},
+   {...base,game:{...base.game,external_game_id:'x'.repeat(129)}}
   ]){
    const result=await invoke({method:'POST',headers,body});
    assert.equal(result.statusCode,400,JSON.stringify(body)?.slice(0,100));
