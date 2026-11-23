@@ -24,6 +24,8 @@ test('missing, expired, revoked, or mismatched records fail closed',()=>{
   {session:{...valid.session,revoked:undefined}},
   {assignment:{...valid.assignment,revoked:undefined}},
   {session:{...valid.session,expiresAtMs:undefined}},
+  {session:{...valid.session,expiresAtMs:-1}},
+  {assignment:{...valid.assignment,expiresAtMs:-1}},
   {assignment:{...valid.assignment,eventSlug:'UPPERCASE'}},
   {assignment:{...valid.assignment,gameNumber:'07'}},
   {assignment:{...valid.assignment,captureId:'bad capture'}},
