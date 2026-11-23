@@ -26,9 +26,9 @@ test('fixture commits game/player/receipt together and replays without mutation'
   const binding={eventSlug:'fixture-event',gameNumber:'1',captureId:'capture-A'};
   const assignment={...session,...binding,active:true};
   let calls=0;
-  const dispatch=async request=>dispatchAuthorizedFixture({
+  const dispatch=async (request,write=args)=>dispatchAuthorizedFixture({
    request,nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment,
-   sendFixture:async authorized=>{calls++;return commitAtomicPublish(db,{...args,gameNumber:authorized.gameNumber,captureId:authorized.captureId});}
+   sendFixture:async authorized=>{calls++;return commitAtomicPublish(db,{...write,gameNumber:authorized.gameNumber,captureId:authorized.captureId});}
   });
   const request={method:'POST',csrfVerified:true,binding};
   assert.equal((await dispatch({...request,binding:{...binding,captureId:'other'}})).status,403);
@@ -37,6 +37,17 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.equal((await dispatch(request)).action,'committed');
   assert.equal((await dispatch(request)).action,'replay');
   assert.equal(calls,2);
+  const conflict=await dispatch(request,{...args,payloadDigest:'b'.repeat(64)});
+  assert.equal(conflict.status,409);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  await db.query('ALTER TABLE scorekeeper_fixture_players ADD CONSTRAINT adapter_points_limit CHECK(points <= 20)');
+  const failure=await dispatch(request,{...args,expectedRevision:1,idempotencyKey:'adapter-fail',payloadDigest:'c'.repeat(64),score:99,points:99,receiptId:'77777777-7777-4777-8777-777777777777'});
+  assert.deepEqual(failure,{status:503,reason:'publish_transport_unavailable'});
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),1);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,11);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  await db.query('ALTER TABLE scorekeeper_fixture_players DROP CONSTRAINT adapter_points_limit');
   assert.deepEqual(await commitAtomicPublish(db,args),{status:200,action:'replay',receiptId,revision:1});
   assert.equal((await commitAtomicPublish(db,{...args,payloadDigest:'b'.repeat(64),score:99,points:99})).status,409);
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-B',captureId:'capture-B'})).status,409);
