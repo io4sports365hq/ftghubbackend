@@ -41,3 +41,14 @@ test('wrong capture is denied after authoritative assignment lookup',async()=>{
  nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment});
  assert.deepEqual(result,{status:403,reason:'capture_mismatch'});
 });
+
+test('invalid clock rejects before any identity store access',async()=>{
+ let calls=0;
+ for(const nowMs of [undefined,NaN,-1,1.5]){
+  const result=await authorizeAdapterRequest({request,nowMs,
+   loadSession:async()=>{calls++;return session;},
+   loadAssignment:async()=>{calls++;return assignment;}});
+  assert.deepEqual(result,{status:503,reason:'clock_unavailable'});
+ }
+ assert.equal(calls,0);
+});
