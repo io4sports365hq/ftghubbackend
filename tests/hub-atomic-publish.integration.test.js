@@ -57,6 +57,33 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
    const res={statusCode:0,status(n){this.statusCode=n;return this;},json(value){this.body=value;return this;}};
    await assigned({method:'POST',body,fixtureCsrf},res);return res;
   };
+  const {createIdentityReaders}=await import('../lib/scorekeeper-identity-readers.proposed.js');
+  const {createHash}=await import('node:crypto');
+  await db.query(await readFile(new URL('../docs/sql/scorekeeper-operator-identity.proposed.sql',import.meta.url),'utf8'));
+  const token='A'.repeat(43);
+  await db.query('INSERT INTO scorekeeper_operator_sessions(token_hash,operator_id,expires_at) VALUES($1,$2,$3)',[createHash('sha256').update(token).digest('hex'),'op-1',new Date(2000)]);
+  await db.query('INSERT INTO scorekeeper_operator_assignments(operator_id,event_slug,game_number,capture_id,expires_at,active) VALUES($1,$2,$3,$4,$5,true)',['op-1',binding.eventSlug,binding.gameNumber,binding.captureId,new Date(2000)]);
+  const readers=createIdentityReaders(db);
+  assert.deepEqual(await readers.loadSession(token),session);
+  assert.equal(await readers.loadSession('B'.repeat(43)),null);
+  const databaseAssigned=createAssignedPublishHandler({
+   verifyCsrf:async()=>true,loadSession:async req=>readers.loadSession(req.fixtureToken),
+   loadAssignment:readers.loadAssignment,
+   resolveEvent:async slug=>slug===binding.eventSlug?{id:1,slug}:null,
+   connect:async()=>{connections++;return {query:db.query.bind(db),release(){releases++;}};},clock:()=>1000
+  });
+  const callDatabase=async(fixtureToken,body)=>{
+   const res={statusCode:0,status(n){this.statusCode=n;return this;},json(value){this.body=value;return this;}};
+   await databaseAssigned({method:'POST',body,fixtureToken},res);return res;
+  };
+  const beforeIdentity=connections;
+  assert.equal((await callDatabase('B'.repeat(43),{...args,binding})).statusCode,403);
+  assert.equal((await callDatabase(token,{...args,binding:{...binding,gameNumber:'2'}})).statusCode,403);
+  assert.equal(connections,beforeIdentity);
+  assert.deepEqual((await callDatabase(token,{...args,binding})).body,{ok:true,...first,action:'replay'});
+  await db.query('UPDATE scorekeeper_operator_sessions SET revoked_at=now()');
+  assert.equal((await callDatabase(token,{...args,binding})).statusCode,403);
+  assert.equal(connections,beforeIdentity+1);
   const before=connections;
   assert.equal((await callAssigned({...args,binding},false)).statusCode,403);
   assert.equal((await callAssigned({...args,binding:{...binding,captureId:'wrong'}})).statusCode,403);
