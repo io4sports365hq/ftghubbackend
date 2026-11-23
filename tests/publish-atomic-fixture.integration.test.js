@@ -36,7 +36,7 @@ test('fixture commits game/player/receipt together and replays without mutation'
    payloadDigest:'c'.repeat(64),score:99,points:99,
    receiptId:'33333333-3333-4333-8333-333333333333'
   }),/check constraint/);
-  assert.equal((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision,1);
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),1);
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
   assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,11);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
