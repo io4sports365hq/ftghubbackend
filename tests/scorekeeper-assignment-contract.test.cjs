@@ -41,6 +41,17 @@ test('missing, expired, revoked, or mismatched records fail closed',()=>{
  ];
  for(const change of cases)assert.equal(authorizeAssignedCapture({...valid,...change}).allowed,false);
 });
+test('authorization expires at the exact boundary and cannot be revived',()=>{
+ const before={...valid,nowMs:1999};
+ assert.equal(authorizeAssignedCapture(before).allowed,true);
+ assert.equal(authorizeAssignedCapture({...valid,nowMs:2000}).allowed,false);
+ assert.equal(authorizeAssignedCapture({...valid,nowMs:2001}).allowed,false);
+ assert.equal(authorizeAssignedCapture({...valid,nowMs:0}).allowed,true);
+});
+test('verified assignment cannot be borrowed by another operator',()=>{
+ const other={...valid,session:{...valid.session,operatorId:'op-2'}};
+ assert.deepEqual(authorizeAssignedCapture(other),{allowed:false,reason:'unassigned'});
+});
 test('invalid clock throws instead of allowing access',()=>{
  assert.throws(()=>authorizeAssignedCapture({...valid,nowMs:NaN}),TypeError);
 });
