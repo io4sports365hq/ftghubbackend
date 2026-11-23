@@ -2,8 +2,8 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {authorizeAssignedCapture}=require('../lib/scorekeeper-assignment-contract.cjs');
-const valid={nowMs:1000,session:{operatorId:'op-1',expiresAtMs:2000,revoked:false},
- assignment:{operatorId:'op-1',active:true,revoked:false,expiresAtMs:2000,eventSlug:'event-one',gameNumber:'7',captureId:'capture-A'},
+const valid={nowMs:1000,session:{operatorId:'op-1',verified:true,expiresAtMs:2000,revoked:false},
+ assignment:{operatorId:'op-1',active:true,verified:true,revoked:false,expiresAtMs:2000,eventSlug:'event-one',gameNumber:'7',captureId:'capture-A'},
  request:{eventSlug:'event-one',gameNumber:'7',captureId:'capture-A'}};
 test('server-side assignment permits only exact binding',()=>{
  assert.deepEqual(authorizeAssignedCapture(valid),{allowed:true,binding:{eventSlug:'event-one',gameNumber:'7',captureId:'capture-A'}});
@@ -22,6 +22,9 @@ test('missing, expired, revoked, or mismatched records fail closed',()=>{
   {request:{...valid.request,captureId:'capture-B'}},
   {session:{...valid.session,operatorId:''}},
   {session:{...valid.session,revoked:undefined}},
+  {session:{...valid.session,verified:undefined}},
+  {assignment:{...valid.assignment,verified:undefined}},
+  {session:{...valid.session,verified:false}},
   {assignment:{...valid.assignment,revoked:undefined}},
   {session:{...valid.session,expiresAtMs:undefined}},
   {session:{...valid.session,expiresAtMs:-1}},
