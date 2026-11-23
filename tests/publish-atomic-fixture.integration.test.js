@@ -25,6 +25,11 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.deepEqual(await commitAtomicPublish(db,args),{status:200,action:'replay',receiptId,revision:1});
   assert.equal((await commitAtomicPublish(db,{...args,payloadDigest:'b'.repeat(64),score:99,points:99})).status,409);
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-B',captureId:'capture-B'})).status,409);
+  // Reusing the original key with a different expected revision must conflict,
+  // even when the digest and capture are unchanged.
+  assert.deepEqual(await commitAtomicPublish(db,{...args,expectedRevision:1}),
+   {status:409,action:'idempotency_conflict'});
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_fixture_players')).rows[0].n,1);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
