@@ -88,3 +88,16 @@ test('upstream transport errors are redacted and never imply successful publish'
   assert.equal(JSON.stringify(result).includes('SECRET'),false);
  }
 });
+
+test('missing transport is rejected only after authorization, with no fallback',async()=>{
+ const request={method:'POST',csrfVerified:true,binding};
+ await assert.rejects(dispatchAuthorizedFixture({
+  request,nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment
+ }),TypeError);
+ const rejected=await dispatchAuthorizedFixture({
+  request:{...request,csrfVerified:false},nowMs:1000,
+  loadSession:async()=>{throw Error('must not load');},
+  loadAssignment:async()=>{throw Error('must not load');}
+ });
+ assert.equal(rejected.status,403);
+});
