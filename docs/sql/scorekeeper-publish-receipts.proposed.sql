@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS scorekeeper_publish_receipts (
 );
 -- Receipt records must be append-only, including their original committed revision.
 CREATE FUNCTION scorekeeper_reject_receipt_mutation() RETURNS trigger
-LANGUAGE plpgsql AS $ BEGIN RAISE EXCEPTION 'publish receipts are append-only'; END $;
+LANGUAGE plpgsql AS $receipt_guard$ BEGIN RAISE EXCEPTION 'publish receipts are append-only'; END $receipt_guard$;
 CREATE TRIGGER scorekeeper_receipts_no_update_delete
 BEFORE UPDATE OR DELETE ON scorekeeper_publish_receipts
 FOR EACH ROW EXECUTE FUNCTION scorekeeper_reject_receipt_mutation();
