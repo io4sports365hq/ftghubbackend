@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS scorekeeper_publish_versions (
   revision bigint NOT NULL CHECK (revision >= 1),
   payload_digest char(64) NOT NULL CHECK (payload_digest ~ '^[a-f0-9]{64}$'),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (event_id, game_number)
+  PRIMARY KEY (event_id, game_number),
+  UNIQUE (event_id, game_number, external_game_id)
 );
 CREATE TABLE IF NOT EXISTS scorekeeper_publish_receipts (
   receipt_id uuid PRIMARY KEY,
@@ -23,6 +24,14 @@ CREATE TABLE IF NOT EXISTS scorekeeper_publish_receipts (
   committed_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (event_id, game_number, idempotency_key),
   FOREIGN KEY (event_id, game_number)
-    REFERENCES scorekeeper_publish_versions(event_id, game_number)
+    REFERENCES scorekeeper_publish_versions(event_id, game_number),
+  FOREIGN KEY (event_id, game_number, external_game_id)
+    REFERENCES scorekeeper_publish_versions(event_id, game_number, external_game_id)
 );
+-- Receipt records must be append-only, including their original committed revision.
+CREATE FUNCTION scorekeeper_reject_receipt_mutation() RETURNS trigger
+LANGUAGE plpgsql AS $ BEGIN RAISE EXCEPTION 'publish receipts are append-only'; END $;
+CREATE TRIGGER scorekeeper_receipts_no_update_delete
+BEFORE UPDATE OR DELETE ON scorekeeper_publish_receipts
+FOR EACH ROW EXECUTE FUNCTION scorekeeper_reject_receipt_mutation();
 COMMIT;
