@@ -45,6 +45,15 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-E',expectedRevision:1})).status,409);
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // A request for another capture with the current revision cannot take
+  // over an existing event/game slot, even with a fresh idempotency key.
+  assert.deepEqual(await commitAtomicPublish(db,{
+   ...second,captureId:'capture-B',idempotencyKey:'key-other-capture',
+   expectedRevision:2,payloadDigest:'9'.repeat(64),
+   receiptId:'66666666-6666-4666-8666-666666666666'
+  }),{status:409,action:'revision_conflict'});
+  assert.equal((await db.query('SELECT external_game_id FROM scorekeeper_publish_versions')).rows[0].external_game_id,'capture-A');
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
   // An out-of-date revision with a fresh idempotency key must not mutate
   // the latest committed game, player row, or receipt ledger.
   assert.deepEqual(await commitAtomicPublish(db,{
