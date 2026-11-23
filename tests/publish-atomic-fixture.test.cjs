@@ -10,7 +10,8 @@ test('invalid inputs never start a database transaction',async()=>{
  for(const change of [
   {eventId:0},{gameNumber:'1; DROP TABLE games'},{captureId:'bad capture'},
   {idempotencyKey:'bad key'},{payloadDigest:'not-a-digest'},
-  {expectedRevision:-1},{score:-1},{points:1.5},{receiptId:'invalid'}
+  {expectedRevision:-1},{score:-1},{points:1.5},{receiptId:'invalid'},{receiptId:'zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'},
+  {receiptId:'11111111-1111-1111-1111-111111111111'}
  ]){
   await assert.rejects(commitAtomicPublish(client,{...valid,...change}),TypeError);
  }
