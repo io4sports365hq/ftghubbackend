@@ -4,6 +4,7 @@ on:
     paths:
       - 'lib/publish-receipt-contract.cjs'
       - 'tests/publish-receipt-postgres.integration.test.js'
+      - 'tests/publish-receipt-concurrent.integration.test.js'
       - '.github/workflows/publish-receipt-postgres.yml'
   workflow_dispatch:
 permissions:
@@ -37,4 +38,4 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: node --test tests/publish-receipt-postgres.integration.test.js
+      - run: node --test tests/publish-receipt-postgres.integration.test.js tests/publish-receipt-concurrent.integration.test.js
