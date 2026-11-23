@@ -122,3 +122,14 @@ test('missing assignment record denies publish rather than using demo defaults',
   loadSession:async()=>session,loadAssignment:async()=>null});
  assert.deepEqual(result,{status:403,reason:'unauthorized'});
 });
+
+test('non-string operator IDs cannot trigger assignment lookup',async()=>{
+ let calls=0;
+ for(const operatorId of [undefined,null,123,['op-1'],{},true]){
+  const result=await authorizeAdapterRequest({request,nowMs:1000,
+   loadSession:async()=>({...session,operatorId}),
+   loadAssignment:async()=>{calls++;return assignment;}});
+  assert.equal(result.status,401);
+ }
+ assert.equal(calls,0);
+});
