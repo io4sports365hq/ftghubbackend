@@ -2,6 +2,8 @@ name: Hub Revision Receipt Contract (Isolated)
 on:
   pull_request:
     paths:
+      - 'lib/scorekeeper-assignment-contract.cjs'
+      - 'tests/scorekeeper-assignment-contract.test.cjs'
       - 'api/publish.js'
       - 'tests/publish-handler-preconnect.test.js'
       - 'lib/publish-atomic-fixture.cjs'
@@ -26,4 +28,4 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: node --test tests/publish-receipt-contract.test.cjs tests/publish-receipt-transaction-prototype.test.cjs tests/publish-atomic-fixture.test.cjs tests/publish-handler-preconnect.test.js
+      - run: node --test tests/publish-receipt-contract.test.cjs tests/publish-receipt-transaction-prototype.test.cjs tests/publish-atomic-fixture.test.cjs tests/publish-handler-preconnect.test.js tests/scorekeeper-assignment-contract.test.cjs
