@@ -22,3 +22,20 @@ test('invalid event ID rejected before query',async()=>{
  await assert.rejects(reserveReceipt(db,{eventId:0,gameNumber:'1',request:req}),TypeError);
  assert.equal(count,0);
 });
+
+test('identical replay returns original receipt without proposing a write',async()=>{
+ const sql=[];
+ const db={query:async(q)=>{
+  sql.push(q);
+  if(q.includes('FROM scorekeeper_publish_versions'))return {rows:[{external_game_id:'capture-A',revision:3}]};
+  if(q.includes('FROM scorekeeper_publish_receipts'))return {rows:[{idempotency_key:'key-A',payload_digest:'a'.repeat(64),expected_revision:0,committed_revision:1,receipt_id:'receipt-A'}]};
+  return {rows:[]};
+ }};
+ const result=await reserveReceipt(db,{eventId:1,gameNumber:'1',request:req});
+ assert.deepEqual(result,{status:200,action:'replay',receiptId:'receipt-A',committedRevision:1});
+ assert.equal(sql.length,3);
+});
+test('database lookup failure rejects instead of returning approval',async()=>{
+ const db={query:async()=>{throw Error('database unavailable')}};
+ await assert.rejects(reserveReceipt(db,{eventId:1,gameNumber:'1',request:req}),/database unavailable/);
+});
