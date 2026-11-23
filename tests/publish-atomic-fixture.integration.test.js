@@ -40,6 +40,17 @@ test('fixture commits game/player/receipt together and replays without mutation'
   assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-E',expectedRevision:1})).status,409);
   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // Receipt insertion is the final write. A duplicate receipt UUID must
+  // abort and roll back even successful game and player writes.
+  await assert.rejects(commitAtomicPublish(db,{
+   ...args,idempotencyKey:'key-F',expectedRevision:2,
+   payloadDigest:'f'.repeat(64),score:19,points:19,
+   receiptId:second.receiptId
+  }),/duplicate key/);
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),2);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
   // Force a player insert failure after revision and score updates. All writes
   // must roll back, preserving the previous committed revision and receipt.
   await db.query('ALTER TABLE scorekeeper_fixture_players ADD CONSTRAINT points_limit CHECK(points <= 20)');
