@@ -33,6 +33,10 @@ test('live handler rejects unsafe methods and unconfigured credentials without D
   for(const body of [
    null,[],{}, {...base,event_slug:'ftg-demo-event!'},
    {...base,game:{...base.game,game_number:'0'}},
+   {...base,game:{...base.game,game_number:'01'}},
+   {...base,game:{...base.game,game_number:'1e2'}},
+   {...base,game:{...base.game,game_number:'99999999999'}},
+   {...base,event_slug:'UPPERCASE'},
    {...base,game:{...base.game,external_game_id:'bad capture'}},
    {...base,players:new Array(201).fill({})},
    {...base,event_name:'x'.repeat(129*1024)},
