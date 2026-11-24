@@ -17,6 +17,7 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   CREATE TABLE ftg_games(id bigserial primary key,event_id bigint references ftg_events(id),external_game_id text,game_number text,game_date text,game_time text,court text,division text,grade text,format text,period text,status text,home_team text,away_team text,home_score int,away_score int,home_fouls int,away_fouls int,published_at timestamptz,updated_at timestamptz,unique(event_id,game_number));
   CREATE TABLE ftg_game_players(game_id bigint references ftg_games(id),side text,player_number text,player_name text,pts int check(pts<=20),reb int,ast int,stl int,blk int,turnovers int,fouls int,ftm int,ftx int);`);
   await db.query(await readFile(new URL('../docs/sql/scorekeeper-publish-receipts.proposed.sql',import.meta.url),'utf8'));
+  await db.query(await readFile(new URL('../docs/sql/scorekeeper-game-format-metadata.proposed.sql',import.meta.url),'utf8'));
   const args={eventId:1,gameNumber:'1',captureId:'capture-A',expectedRevision:0,idempotencyKey:'first',game:{home_score:11,away_score:5},players:[{player_name:'Fixture Player',pts:11}]};
   const {createDraftPublishHandler}=await import('../lib/hub-publish-handler.proposed.js');
   let connections=0,releases=0;
@@ -61,7 +62,7 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   const {createHash}=await import('node:crypto');
   await db.query(await readFile(new URL('../docs/sql/scorekeeper-operator-identity.proposed.sql',import.meta.url),'utf8'));
   const token='A'.repeat(43);
-  await db.query('INSERT INTO scorekeeper_operator_sessions(token_hash,operator_id,expires_at) VALUES($1,$2,$3)',[createHash('sha256').update(token).digest('hex'),'op-1',new Date(2000)]);
+  await db.query('INSERT INTO scorekeeper_operator_sessions(token_hash,operator_id,expires_at,idle_expires_at) VALUES($1,$2,$3,$3)',[createHash('sha256').update(token).digest('hex'),'op-1',new Date(2000)]);
   await db.query('INSERT INTO scorekeeper_operator_assignments(operator_id,event_slug,game_number,capture_id,expires_at,active) VALUES($1,$2,$3,$4,$5,true)',['op-1',binding.eventSlug,binding.gameNumber,binding.captureId,new Date(2000)]);
   const readers=createIdentityReaders(db);
   assert.deepEqual(await readers.loadSession(token),session);
@@ -120,3 +121,4 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
  }finally{await db.query('ROLLBACK').catch(()=>{});await db.query('DROP SCHEMA IF EXISTS hub_real_fixture CASCADE');await db.end();}
 });
+

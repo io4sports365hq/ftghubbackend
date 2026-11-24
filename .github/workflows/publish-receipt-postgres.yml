@@ -9,6 +9,23 @@ on:
       - 'docs/sql/scorekeeper-publish-receipts.proposed.sql'
       - 'lib/hub-atomic-publish.proposed.js'
       - 'lib/hub-game-player-writes.proposed.js'
+      - 'lib/hub-publish-handler.proposed.js'
+      - 'lib/hub-assigned-publish-handler.proposed.js'
+      - 'lib/hub-service-publish-handler.proposed.js'
+      - 'lib/hub-service-delegation.proposed.js'
+      - 'lib/scorekeeper-identity-readers.proposed.js'
+      - 'lib/scorekeeper-session-writer.proposed.js'
+      - 'lib/hub-transactional-delegation.proposed.js'
+      - 'lib/hub-revision-context.proposed.js'
+      - 'lib/hub-scoped-release-handlers.proposed.js'
+      - 'lib/hub-public-latest.proposed.js'
+      - 'lib/scorekeeper-assignment-scope.proposed.js'
+      - 'lib/scorekeeper-rate-limiter.proposed.js'
+      - 'lib/scorekeeper-oidc-flow-store.proposed.js'
+      - 'lib/scorekeeper-operator-directory.proposed.js'
+      - 'docs/sql/scorekeeper-game-format-metadata.proposed.sql'
+      - 'tests/hub-public-latest.test.mjs'
+      - 'docs/sql/scorekeeper-operator-identity.proposed.sql'
       - 'tests/hub-atomic-publish.integration.test.js'
       - 'lib/publish-atomic-fixture.cjs'
       - 'tests/publish-atomic-fixture.integration.test.js'
@@ -45,4 +62,5 @@ jobs:
         with:
           node-version: '24'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: node --test tests/publish-receipt-postgres.integration.test.js tests/publish-receipt-concurrent.integration.test.js tests/publish-receipt-schema.integration.test.js tests/publish-atomic-fixture.integration.test.js tests/hub-atomic-publish.integration.test.js
+      - run: node --test tests/publish-receipt-postgres.integration.test.js tests/publish-receipt-concurrent.integration.test.js tests/publish-receipt-schema.integration.test.js tests/publish-atomic-fixture.integration.test.js tests/hub-atomic-publish.integration.test.js tests/hub-public-latest.test.mjs
+
