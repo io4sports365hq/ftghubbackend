@@ -24,4 +24,9 @@ GRANT INSERT, UPDATE ON public.ftg_games TO scorekeeper_publish_access;
 GRANT INSERT, DELETE ON public.ftg_game_players TO scorekeeper_publish_access;
 GRANT INSERT, UPDATE (revision,payload_digest,updated_at) ON public.scorekeeper_publish_versions TO scorekeeper_publish_access;
 GRANT INSERT ON public.scorekeeper_publish_receipts TO scorekeeper_publish_access;
-GRANT USAGE ON SEQUENCE public.ftg_games_id_seq TO scorekeeper_publish_access;
+-- Bigint disposable fixtures have a sequence; the actual Hub UUID default does not.
+DO $$ BEGIN
+ IF to_regclass('public.ftg_games_id_seq') IS NOT NULL THEN
+  GRANT USAGE ON SEQUENCE public.ftg_games_id_seq TO scorekeeper_publish_access;
+ END IF;
+END $$;

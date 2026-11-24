@@ -119,6 +119,31 @@ test('draft real-table coordinator commits, replays and rolls back',async()=>{
   assert.equal((await db.query('SELECT pts FROM ftg_game_players')).rows[0].pts,11);
   assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),1);
   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
- }finally{await db.query('ROLLBACK').catch(()=>{});await db.query('DROP SCHEMA IF EXISTS hub_real_fixture CASCADE');await db.end();}
+  // The actual Hub's read-only catalog inventory uses UUID identifiers,
+  // date/time types, and a NOT NULL opponent-fouls column. Recreate that
+  // structure from schema metadata only, with no Production data or connection.
+  await db.query('CREATE SCHEMA hub_uuid_fixture; SET search_path TO hub_uuid_fixture');
+  await db.query(`CREATE TABLE ftg_events(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),slug text NOT NULL UNIQUE,name text NOT NULL,is_published boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+   CREATE TABLE ftg_games(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),event_id uuid NOT NULL REFERENCES ftg_events(id) ON DELETE CASCADE,external_game_id text,game_number text NOT NULL,game_date date,game_time time,court text,division text,grade text,format text NOT NULL DEFAULT 'classic',period text,status text NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','live','final')),home_team text NOT NULL,away_team text NOT NULL,home_score int NOT NULL DEFAULT 0 CHECK(home_score>=0),away_score int NOT NULL DEFAULT 0 CHECK(away_score>=0),home_fouls int NOT NULL DEFAULT 0 CHECK(home_fouls>=0),away_fouls int NOT NULL DEFAULT 0 CHECK(away_fouls>=0),published_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),UNIQUE(event_id,game_number));
+   CREATE TABLE ftg_game_players(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),game_id uuid NOT NULL REFERENCES ftg_games(id) ON DELETE CASCADE,side text NOT NULL CHECK(side IN ('home','away')),player_number text,player_name text NOT NULL DEFAULT '',pts int NOT NULL DEFAULT 0,reb int NOT NULL DEFAULT 0,ast int NOT NULL DEFAULT 0,stl int NOT NULL DEFAULT 0,blk int NOT NULL DEFAULT 0,turnovers int NOT NULL DEFAULT 0,fouls int NOT NULL DEFAULT 0,ftm int NOT NULL DEFAULT 0,ftx int NOT NULL DEFAULT 0,created_at timestamptz NOT NULL DEFAULT now());`);
+  const eventId=(await db.query("INSERT INTO ftg_events(slug,name) VALUES('fixture-uuid','Fictional UUID event') RETURNING id")).rows[0].id;
+  for(const file of ['scorekeeper-publish-receipts.uuid.proposed.sql','scorekeeper-game-format-metadata.proposed.sql','scorekeeper-one-team-opponent-fouls.proposed.sql','scorekeeper-operator-identity.proposed.sql'])await db.query(await readFile(new URL('../docs/sql/'+file,import.meta.url),'utf8'));
+  const scope={version:'scorekeeper-scope-v2-one-team',homeTeam:'Fictional Falcons',awayTeam:'Fictional Owls',format:'classic',roster:[{side:'home',player_number:'12',player_name:'Fictional Player'}]};
+  const uuidBinding={eventSlug:'fixture-uuid',gameNumber:'1',captureId:'uuid-capture'};
+  await db.query("INSERT INTO scorekeeper_operators(operator_id,issuer,subject,active) VALUES('op-uuid','fixture','subject',true)");
+  await db.query('INSERT INTO scorekeeper_operator_sessions(token_hash,operator_id,expires_at,idle_expires_at) VALUES($1,$2,$3,$3)',[createHash('sha256').update(token).digest('hex'),'op-uuid',new Date(2000)]);
+  await db.query('INSERT INTO scorekeeper_operator_assignments(operator_id,event_slug,game_number,capture_id,valid_from,expires_at,active,scope) VALUES($1,$2,$3,$4,$5,$6,true,$7)',['op-uuid',uuidBinding.eventSlug,uuidBinding.gameNumber,uuidBinding.captureId,new Date(0),new Date(2000),scope]);
+  const {createScopedHubHandlers}=await import('../lib/hub-scoped-release-handlers.proposed.js');
+  const {createScorekeeperRateLimiter}=await import('../lib/scorekeeper-rate-limiter.proposed.js');
+  const limits={scorer_context:10,scorer_publish:10,scorer_receipt:10,hub_context:10,hub_publish:10,hub_receipt:10};
+  const uuidHub=createScopedHubHandlers({credential,identityClient:db,resolveEvent:async slug=>{const {rows}=await db.query('SELECT id,slug FROM ftg_events WHERE slug=$1',[slug]);return rows[0]??null;},connect:async()=>({query:db.query.bind(db),release(){}}),rateLimiter:createScorekeeperRateLimiter(db,{limits,windowMs:1000,clock:()=>1000}),clock:()=>1000});
+  const call=async(handler,body)=>{const res={setHeader(){},status(n){this.statusCode=n;return this;},json(value){this.body=value;return this;}};await handler({method:'POST',headers:{'x-ftg-publish-token':credential,'x-ftg-operator-session':token},body},res);return res;};
+  assert.deepEqual((await call(uuidHub.context,{binding:uuidBinding})).body,{ok:true,revision:0});
+  const uuidPayload={binding:uuidBinding,expectedRevision:0,idempotencyKey:'uuid-fixture',game:{game_date:'2026-11-24',game_time:'10:00',court:'Court 1',division:'',grade:'',format:'classic',period:'FINAL',home_team:scope.homeTeam,away_team:scope.awayTeam,home_score:8,away_score:6,home_fouls:2,away_fouls:null,home_quarter_points:0,away_quarter_points:0,target_score:null},players:[{side:'home',player_number:'12',player_name:'Fictional Player',pts:8,reb:1,ast:0,stl:0,blk:0,turnovers:0,fouls:2,ftm:0,ftx:0}]};
+  const accepted=await call(uuidHub.publish,uuidPayload);assert.equal(accepted.statusCode,200);assert.equal(accepted.body.revision,1);
+  const repeated=await call(uuidHub.publish,uuidPayload);assert.equal(repeated.body.receiptId,accepted.body.receiptId);assert.equal(repeated.body.action,'replay');
+  const actual=(await db.query('SELECT event_id,home_score,away_score,away_fouls,game_time FROM ftg_games')).rows[0];assert.deepEqual(actual,{event_id:eventId,home_score:8,away_score:6,away_fouls:null,game_time:'10:00:00'});
+  assert.equal((await db.query('SELECT is_published FROM ftg_events')).rows[0].is_published,false);assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+ }finally{await db.query('ROLLBACK').catch(()=>{});await db.query('DROP SCHEMA IF EXISTS hub_uuid_fixture CASCADE');await db.query('DROP SCHEMA IF EXISTS hub_real_fixture CASCADE');await db.end();}
 });
 
