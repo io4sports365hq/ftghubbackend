@@ -1,0 +1,137 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import pg from 'pg';
+const require=createRequire(import.meta.url);
+const {commitAtomicPublish}=require('../lib/publish-atomic-fixture.cjs');
+test('fixture commits game/player/receipt together and replays without mutation',async t=>{
+ const url=process.env.TEST_DATABASE_URL;
+ if(!url || process.env.TEST_DATABASE_ISOLATED!=='YES'){t.skip('isolated DB unavailable');return;}
+ const u=new URL(url);
+ if(!['localhost','127.0.0.1','::1'].includes(u.hostname)|| !/(_fixture|_test|_ci)$/.test(decodeURIComponent(u.pathname.slice(1))))throw Error('unsafe DB');
+ const db=new pg.Client({connectionString:url,ssl:false});await db.connect();
+ const receiptId='11111111-1111-4111-8111-111111111111';
+ const args={eventId:1,gameNumber:'1',captureId:'capture-A',expectedRevision:0,idempotencyKey:'key-A',payloadDigest:'a'.repeat(64),score:11,points:11,receiptId};
+ try{
+  await db.query('BEGIN');
+  await db.query('CREATE SCHEMA sk_atomic_fixture');
+  await db.query('SET search_path TO sk_atomic_fixture');
+  await db.query('COMMIT');
+  await db.query('CREATE TABLE scorekeeper_publish_versions(event_id bigint,game_number text,external_game_id text,revision bigint,payload_digest text,updated_at timestamptz default now(),primary key(event_id,game_number))');
+  await db.query('CREATE TABLE scorekeeper_publish_receipts(receipt_id uuid primary key,event_id bigint,game_number text,external_game_id text,idempotency_key text,payload_digest text,expected_revision bigint,committed_revision bigint,unique(event_id,game_number,idempotency_key))');
+  await db.query('CREATE TABLE scorekeeper_fixture_scores(event_id bigint,game_number text,score int,primary key(event_id,game_number))');
+  await db.query('CREATE TABLE scorekeeper_fixture_players(event_id bigint,game_number text,points int)');
+  const {dispatchAuthorizedFixture}=require('../lib/scorekeeper-adapter-dispatch-fixture.cjs');
+  const session={operatorId:'op-1',verified:true,revoked:false,expiresAtMs:2000};
+  const binding={eventSlug:'fixture-event',gameNumber:'1',captureId:'capture-A'};
+  const assignment={...session,...binding,active:true};
+  let calls=0;
+  const dispatch=async (request,write=args)=>dispatchAuthorizedFixture({
+   request,nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment,
+   sendFixture:async authorized=>{calls++;return commitAtomicPublish(db,{...write,gameNumber:authorized.gameNumber,captureId:authorized.captureId});}
+  });
+  const request={method:'POST',csrfVerified:true,binding};
+  assert.equal((await dispatch({...request,binding:{...binding,captureId:'other'}})).status,403);
+  assert.equal(calls,0);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_versions')).rows[0].n,0);
+  assert.equal((await dispatch(request)).action,'committed');
+  assert.equal((await dispatch(request)).action,'replay');
+  assert.equal(calls,2);
+  const conflict=await dispatch(request,{...args,payloadDigest:'b'.repeat(64)});
+  assert.equal(conflict.status,409);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  await db.query('ALTER TABLE scorekeeper_fixture_players ADD CONSTRAINT adapter_points_limit CHECK(points <= 20)');
+  const failure=await dispatch(request,{...args,expectedRevision:1,idempotencyKey:'adapter-fail',payloadDigest:'c'.repeat(64),score:99,points:99,receiptId:'77777777-7777-4777-8777-777777777777'});
+  assert.deepEqual(failure,{status:503,reason:'publish_transport_unavailable'});
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),1);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,11);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  await db.query('ALTER TABLE scorekeeper_fixture_players DROP CONSTRAINT adapter_points_limit');
+  assert.deepEqual(await commitAtomicPublish(db,args),{status:200,action:'replay',receiptId,revision:1});
+  assert.equal((await commitAtomicPublish(db,{...args,payloadDigest:'b'.repeat(64),score:99,points:99})).status,409);
+  assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-B',captureId:'capture-B'})).status,409);
+  // Reusing the original key with a different expected revision must conflict,
+  // even when the digest and capture are unchanged.
+  assert.deepEqual(await commitAtomicPublish(db,{...args,expectedRevision:1}),
+   {status:409,action:'idempotency_conflict'});
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,11);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_fixture_players')).rows[0].n,1);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,1);
+  // A valid second revision advances the game, but replay of the first request
+  // must still return its original immutable receipt and revision.
+  const second={...args,idempotencyKey:'key-D',expectedRevision:1,
+   payloadDigest:'d'.repeat(64),score:15,points:15,
+   receiptId:'44444444-4444-4444-8444-444444444444'};
+  assert.deepEqual(await commitAtomicPublish(db,second),
+   {status:200,action:'committed',receiptId:second.receiptId,revision:2});
+  assert.deepEqual(await commitAtomicPublish(db,args),
+   {status:200,action:'replay',receiptId,revision:1});
+  assert.equal((await commitAtomicPublish(db,{...args,idempotencyKey:'key-E',expectedRevision:1})).status,409);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // A request for another capture with the current revision cannot take
+  // over an existing event/game slot, even with a fresh idempotency key.
+  assert.deepEqual(await commitAtomicPublish(db,{
+   ...second,captureId:'capture-B',idempotencyKey:'key-other-capture',
+   expectedRevision:2,payloadDigest:'9'.repeat(64),
+   receiptId:'66666666-6666-4666-8666-666666666666'
+  }),{status:409,action:'revision_conflict'});
+  assert.equal((await db.query('SELECT external_game_id FROM scorekeeper_publish_versions')).rows[0].external_game_id,'capture-A');
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // An out-of-date revision with a fresh idempotency key must not mutate
+  // the latest committed game, player row, or receipt ledger.
+  assert.deepEqual(await commitAtomicPublish(db,{
+   ...args,idempotencyKey:'key-stale',expectedRevision:0,
+   payloadDigest:'e'.repeat(64),score:999,points:999,
+   receiptId:'55555555-5555-4555-8555-555555555555'
+  }),{status:409,action:'revision_conflict'});
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),2);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // Receipt insertion is the final write. A duplicate receipt UUID must
+  // abort and roll back even successful game and player writes.
+  await assert.rejects(commitAtomicPublish(db,{
+   ...args,idempotencyKey:'key-F',expectedRevision:2,
+   payloadDigest:'f'.repeat(64),score:19,points:19,
+   receiptId:second.receiptId
+  }),/duplicate key/);
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),2);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+  // Force a player insert failure after revision and score updates. All writes
+  // must roll back, preserving the previous committed revision and receipt.
+  await db.query('ALTER TABLE scorekeeper_fixture_players ADD CONSTRAINT points_limit CHECK(points <= 20)');
+  await assert.rejects(commitAtomicPublish(db,{
+   ...args,idempotencyKey:'key-C',expectedRevision:2,
+   payloadDigest:'c'.repeat(64),score:99,points:99,
+   receiptId:'33333333-3333-4333-8333-333333333333'
+  }),/check constraint/);
+  assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),2);
+  assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,15);
+  assert.equal((await db.query('SELECT points FROM scorekeeper_fixture_players')).rows[0].points,15);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,2);
+
+  // Separate connections contend on the same transaction advisory lock.
+  const peer=new pg.Client({connectionString:url,ssl:false});
+  await peer.connect();
+  try {
+   await peer.query('SET search_path TO sk_atomic_fixture');
+   const next={...args,expectedRevision:2,idempotencyKey:'concurrent-key',payloadDigest:'8'.repeat(64),score:18,points:18,receiptId:'88888888-8888-4888-8888-888888888888'};
+   const submit=client=>dispatchAuthorizedFixture({
+    request,nowMs:1000,loadSession:async()=>session,loadAssignment:async()=>assignment,
+    sendFixture:async authorized=>commitAtomicPublish(client,{...next,gameNumber:authorized.gameNumber,captureId:authorized.captureId})
+   });
+   const results=await Promise.all([submit(db),submit(peer)]);
+   assert.deepEqual(results.map(r=>r.action).sort(),['committed','replay']);
+   assert.ok(results.every(r=>r.receiptId===next.receiptId && r.revision===3));
+   assert.equal(Number((await db.query('SELECT revision FROM scorekeeper_publish_versions')).rows[0].revision),3);
+   assert.equal((await db.query('SELECT count(*)::int AS n FROM scorekeeper_publish_receipts')).rows[0].n,3);
+   assert.equal((await db.query('SELECT score FROM scorekeeper_fixture_scores')).rows[0].score,18);
+  } finally {await peer.end();}
+
+ }finally{await db.query('DROP SCHEMA IF EXISTS sk_atomic_fixture CASCADE').catch(()=>{});await db.end();}
+});
