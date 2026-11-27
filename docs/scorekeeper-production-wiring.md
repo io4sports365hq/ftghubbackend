@@ -1,0 +1,7 @@
+# Hub Production wiring review — HOLD
+
+New service-only context and publish routes use the independently verified session and assignment authority, transactional scope recheck, receipt/revision transaction, and separate restricted publisher login. Existing Hub routes are unchanged. The new routes are disabled unless the exact Production environment, release profile, canonical Hub host and explicit flag match. No browser or caller may supply a database host, credential or trusted role. Existing legacy direct-publish configuration must remain inactive; never configure its separate legacy publish key as part of this release.
+
+The user separately approved the UUID migration, which was applied atomically to the attested FTG Hub main branch `br-super-base-axndwya2`, preserving existing event/game/player record counts. Eight empty Scorekeeper tables and two NOLOGIN permission groups verified. Restricted managed login accounts have been verified with distinct credentials; the earlier two unused NOLOGIN accounts remain unable to connect. All new settings target Production only. No public publication or deployment has occurred. `IO4_SCOREKEEPER_HUB_ENABLED=false` remains in effect. No settings for registration or communications were changed.
+
+Review-only migration preflight/postflight and login-budget SQL record the authorized migration sequence; do not rerun on an already migrated database. Preserve receipt history on rollback. No future publication or visibility change until separate authorization.
